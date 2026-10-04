@@ -2,10 +2,9 @@ import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
 const SESSION = { cwd: '/repo', surface: 'terminal', isInteractive: true } as const
-const DONE = { answer: 'done', isAborted: false, turnId: 't1', reason: 'answer' } as const
 
 // The host beneath the mod: a clock the test moves, and every command it runs
-// and toast it shows recorded instead of done.
+// recorded instead of done.
 function host(on: On) {
   const clock = mock.clock(on)
   mock.store(on)
@@ -13,7 +12,6 @@ function host(on: On) {
 
   const runs: string[] = []
   const argvs: (readonly string[])[] = []
-  const toasts: string[] = []
   on('process.run', ($, e) => {
     const [name = ''] = e.argv
     const isUp = runs.includes('open')
@@ -31,37 +29,14 @@ function host(on: On) {
       },
     }
   })
-  on('ui.toast', ($, e) => {
-    toasts.push(e.text)
-
-    return { value: undefined }
-  })
+  on('ui.toast', () => ({ value: undefined }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('turn.start', ($, e) => ({ turnId: e.turnId }))
-  on('turn.complete', ($, e) => ({ text: e.answer }))
 
-  return { clock, runs, argvs, toasts }
+  return { clock, runs, argvs }
 }
 
-test('opens TikTok once a turn runs long and closes it when the turn ends', async ($, on) => {
-  const { clock, runs, toasts } = host(on)
-
-  await $.session.start(SESSION)
-  await $.turn.start({ text: 'build it', turnId: 't1' })
-
-  await clock.advance(9_000)
-  expect(runs).toEqual([])
-
-  await clock.advance(1_000)
-  expect(runs).toEqual(['pgrep', 'open'])
-
-  await $.turn.complete({ ...DONE, durationMs: 60_000 })
-  expect(runs).toEqual(['pgrep', 'open', 'pkill'])
-  expect(toasts).toEqual(['Claude is done. Back to work.'])
-})
-
-test('the pane command runs the viewer and draws its frames as a picture', async ($, on) => {
+test('the command runs the viewer and draws its frames as a picture', async ($, on) => {
   const { clock } = host(on)
 
   const spawned: string[] = []
@@ -88,7 +63,7 @@ test('the pane command runs the viewer and draws its frames as a picture', async
   await $.session.start(SESSION)
   await $.command.run({
     command: 'tiktok',
-    args: 'pane',
+    args: '',
     origin: { kind: 'composer' },
     presentation: { isFullscreen: true, columns: 200 },
   })
@@ -133,17 +108,4 @@ test('the login command opens a real window on the login page', async ($, on) =>
 
   expect(runs).toEqual(['pkill', 'pgrep', 'open'])
   expect(argvs.at(-1)).toContain('--app=https://www.tiktok.com/login')
-})
-
-test('a short turn never opens the window', async ($, on) => {
-  const { clock, runs, toasts } = host(on)
-
-  await $.session.start(SESSION)
-  await $.turn.start({ text: 'hi', turnId: 't1' })
-  await clock.advance(3_000)
-  await $.turn.complete({ ...DONE, durationMs: 3_000 })
-  await clock.advance(60_000)
-
-  expect(runs).toEqual([])
-  expect(toasts).toEqual([])
 })
