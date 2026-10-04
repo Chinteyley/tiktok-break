@@ -47,6 +47,17 @@ actions on the account you logged in with.
 ## Install
 
 ```sh
+claude plugin marketplace add Chinteyley/tiktok-break
+claude plugin install tiktok-break@tiktok-break
+```
+
+Then start Claude Code, or run `/reload-plugins` in a session that is already
+open.
+
+To work on the mod instead, clone the repository and load the folder directly;
+edits to it reload live:
+
+```sh
 git clone https://github.com/Chinteyley/tiktok-break
 claude --plugin-dir ./tiktok-break
 ```
