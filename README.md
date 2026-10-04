@@ -3,6 +3,8 @@
 Watch TikTok inside Claude Code while Claude works, in a pane beside the
 transcript.
 
+![The TikTok pane docked beside a Claude Code session](assets/screenshot.png)
+
 Unofficial. Not affiliated with TikTok or Anthropic.
 
 ## Commands
