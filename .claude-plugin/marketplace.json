@@ -1,0 +1,12 @@
+{
+  "name": "tiktok-break",
+  "description": "Watch TikTok in a Claude Code pane while Claude works",
+  "owner": { "name": "chintey" },
+  "plugins": [
+    {
+      "name": "tiktok-break",
+      "source": "./",
+      "description": "Plays TikTok in a side pane while Claude works"
+    }
+  ]
+}
