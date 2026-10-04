@@ -1,8 +1,7 @@
 # tiktok-break
 
-Watch TikTok inside Claude Code while Claude works: in a pane beside the
-transcript, or in a phone-sized window that opens during long turns and closes
-when Claude is done.
+Watch TikTok inside Claude Code while Claude works, in a pane beside the
+transcript.
 
 Unofficial. Not affiliated with TikTok or Anthropic.
 
@@ -10,18 +9,13 @@ Unofficial. Not affiliated with TikTok or Anthropic.
 
 | Command | What it does |
 | --- | --- |
-| `/tiktok pane` | Plays your For You feed in a pane; run it again to close. |
-| `/tiktok login` | Opens a real Chrome window on the mod's profile so you can log in. Close it, then run `/tiktok pane`. |
-| `/tiktok` | Turns break windows on or off (on by default). |
+| `/tiktok` | Plays your For You feed in a pane; run it again to close. |
+| `/tiktok login` | Opens a real Chrome window on the mod's profile so you can log in. Close it, then run `/tiktok`. |
 
 **The pane** docks at the side, full height, when Claude Code is in its
 fullscreen layout and the terminal is at least 110 columns wide. In a smaller
 terminal it is a block above the prompt. Docked, a video is framed with its
 creator, likes, comments, saves and shares; above the prompt, the video alone.
-
-**Break windows** open once a turn has been running for 10 seconds and close
-when the turn ends or Claude raises a notification, such as a permission
-prompt. They never open while the pane is playing.
 
 ### Pane controls
 
@@ -67,8 +61,8 @@ file through the terminal's graphics protocol. The controls go the other way
 over a Unix socket: the viewer presses TikTok's own keyboard shortcuts in the
 page. Sound comes from that Chrome.
 
-The break window is a plain Chrome app window on the same profile, so one
-login serves both.
+`/tiktok login` opens a plain Chrome app window on the same profile, which is
+how the pane comes to be logged in.
 
 ## Good to know
 

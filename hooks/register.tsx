@@ -1,9 +1,6 @@
-import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
-const FEED = 'https://www.tiktok.com/foryou'
 const LOGIN = 'https://www.tiktok.com/login'
-// A turn shorter than this is not worth the context switch, so the window waits.
-const DELAY_MS = 10_000
 const PANE = 'tiktok'
 // From this width the fullscreen layout docks a pane beside the transcript.
 const DOCK_COLUMNS = 110
@@ -21,12 +18,6 @@ const CONTROLS = [
 ] as const
 const CONTROL_GAP = 2
 
-let isEnabled = true
-let isWorking = false
-// Set while a break is pending or showing.
-let timer: Timer | undefined
-// The break window is up, opened by the timer.
-let isShowing = false
 // The viewer feeding the pane, while it runs.
 let viewer: ReturnType<EngineInterface['process']['spawn']> | undefined
 let generation = 0
@@ -83,37 +74,6 @@ async function quit($: EngineInterface) {
   ])
 
   return exitCode === 0
-}
-
-// What the timer does. A window the person opened to log in is left alone:
-// a second one would share its process, and close it when the turn ends.
-async function takeBreak($: EngineInterface) {
-  if (await isBusy($)) {
-    return
-  }
-
-  isShowing = true
-  await open($, FEED)
-}
-
-function arm($: EngineInterface) {
-  if (isEnabled && isWorking && viewer === undefined) {
-    timer ??= $.clock.after(DELAY_MS, () => void takeBreak($))
-  }
-}
-
-// Resolves true when the break window was showing.
-async function close($: EngineInterface) {
-  timer?.cancel()
-  timer = undefined
-
-  if (!isShowing) {
-    return false
-  }
-
-  isShowing = false
-
-  return quit($)
 }
 
 // Chrome takes a moment to leave the profile, and one started before then
@@ -210,12 +170,10 @@ async function send($: EngineInterface, action: string) {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    isEnabled = (await $.store.get('isEnabled')) !== false
     await $.command.register({
       name: 'tiktok',
-      description:
-        'Turn the TikTok break window on or off; "pane" plays it in a side pane, "login" opens a window to log in',
-      argumentHint: '[pane|login]',
+      description: 'Play TikTok in a side pane; "login" opens a window to log in',
+      argumentHint: '[login]',
       immediate: true,
     })
 
@@ -223,61 +181,43 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'tiktok' }, async ($, e) => {
-    const args = e.args.trim()
-
     // Logging in takes a real window: a QR code, a password manager, a
     // captcha. The pane's Chrome shares the profile, so it is logged in after.
-    if (args === 'login') {
+    if (e.args.trim() === 'login') {
       if (viewer !== undefined) {
         await $.ui.close({ id: PANE })
       }
 
-      await close($)
       await quit($)
       await settle($)
       await open($, LOGIN)
 
       return {
-        text: 'Log in to TikTok in the window that opened, then close it and run /tiktok pane.',
+        text: 'Log in to TikTok in the window that opened, then close it and run /tiktok.',
       }
     }
 
-    if (args === 'pane') {
-      if (viewer !== undefined) {
-        await $.ui.close({ id: PANE })
+    if (viewer !== undefined) {
+      await $.ui.close({ id: PANE })
 
-        return { text: 'TikTok pane closed.' }
-      }
-
-      const { isFullscreen, columns } = e.presentation
-      const isDocked = isFullscreen && columns >= DOCK_COLUMNS
-
-      await close($)
-      await quit($)
-      await settle($)
-      void watch($, isDocked)
-      await $.ui.open({ id: PANE, title: 'TikTok', columns: 46, rows: 60 })
-
-      const where =
-        isDocked
-          ? 'at the side'
-          : `above the prompt; from ${DOCK_COLUMNS} columns (now ${columns}) it docks at the side, full height`
-
-      return {
-        text: `TikTok pane opened ${where}. Click a control under the picture, or press ctrl+x tab to give the pane the keys. /tiktok pane again closes it; /tiktok login logs in.`,
-      }
+      return { text: 'TikTok pane closed.' }
     }
 
-    isEnabled = !isEnabled
-    await $.store.set('isEnabled', isEnabled)
+    const { isFullscreen, columns } = e.presentation
+    const isDocked = isFullscreen && columns >= DOCK_COLUMNS
 
-    if (isEnabled) {
-      arm($)
-    } else {
-      await close($)
+    await quit($)
+    await settle($)
+    void watch($, isDocked)
+    await $.ui.open({ id: PANE, title: 'TikTok', columns: 46, rows: 60 })
+
+    const where = isDocked
+      ? 'at the side'
+      : `above the prompt; from ${DOCK_COLUMNS} columns (now ${columns}) it docks at the side, full height`
+
+    return {
+      text: `TikTok pane opened ${where}. Click a control under the picture, or press ctrl+x tab to give the pane the keys. /tiktok again closes it; /tiktok login logs in.`,
     }
-
-    return { text: `TikTok breaks are ${isEnabled ? 'on' : 'off'}.` }
   })
 
   on('ui.close', { id: PANE }, async ($, e, next) => {
@@ -325,40 +265,5 @@ export const register: Register = on => {
         </Box>
       </Box>
     )
-  })
-
-  on('turn.start', ($, e, next) => {
-    isWorking = true
-    arm($)
-
-    return next(e)
-  })
-
-  // A prompt that needed the person closed the window; the next tool call
-  // brings it back.
-  on('tool.call', ($, e, next) => {
-    arm($)
-
-    return next(e)
-  })
-
-  on('classic.Notification', async ($, e, next) => {
-    if (await close($)) {
-      $.ui.toast('Claude needs you')
-    }
-
-    return next(e)
-  })
-
-  on('turn.complete', async ($, e, next) => {
-    if (e.agentId === undefined) {
-      isWorking = false
-
-      if (await close($)) {
-        $.ui.toast('Claude is done. Back to work.')
-      }
-    }
-
-    return next(e)
   })
 }
