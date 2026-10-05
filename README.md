@@ -39,12 +39,11 @@ actions on the account you logged in with.
 ## Requirements
 
 - macOS or Linux
-- A Chromium browser: Google Chrome, Chromium, Brave or Microsoft Edge, on
-  your `PATH` or in `/Applications`. The first one found is used, in that
-  order. Firefox and Safari can't be driven the way the pane needs, and the
-  login has to happen in the same browser as the pane, so your default browser
-  is not used unless it is one of these. A snap-packaged Chromium can't write
-  the profile in `~/.config` and won't work.
+- A Chromium-based browser (Chrome, Chromium, Brave, Edge, Vivaldi, Helium…)
+  set as your default browser. Firefox and Safari can't be driven the way the
+  pane needs. A default browser launched through `env` or `flatpak` isn't
+  detected. A snap-packaged Chromium can't write the profile in `~/.config`
+  and won't work.
 - [Bun](https://bun.sh) on your `PATH`
 - For the pane, a terminal that draws the kitty graphics protocol. Built and
   tested in Ghostty; kitty should work but is untested.

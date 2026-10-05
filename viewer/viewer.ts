@@ -3,7 +3,7 @@
 // The pane's controls reach it on a Unix socket, one action a request. The mod
 // runs it with bun: viewer.ts <profile dir> <frame path> <socket path> <framing>
 // <browser>, the framing `video` (the video alone) or `item` (with its likes and
-// creator), the browser any Chromium one.
+// creator).
 import { lstatSync, rmSync } from 'node:fs'
 import { rename } from 'node:fs/promises'
 
@@ -118,24 +118,12 @@ for (let i = 0; i < 30 && isLocked(); i++) {
   await Bun.sleep(100)
 }
 
-// TikTok answers a like from a browser that says it is automated with
-// nothing, and the page takes the like back. The person asked for the pane's
-// Chrome to say what a Chrome window says: its usual name, with no "Headless"
-// in it, and no automation flag.
-const version = new TextDecoder().decode(Bun.spawnSync([browser, '--version']).stdout)
-const major = /(\d+)\./.exec(version)?.[1]
-
-if (!major) {
-  throw new Error(`Chrome did not say its version: ${version}`)
-}
-
 const chrome = Bun.spawn(
   [
     browser,
     '--headless=new',
     '--remote-debugging-port=0',
     `--user-data-dir=${profile}`,
-    `--user-agent=Mozilla/5.0 (${process.platform === 'darwin' ? 'Macintosh; Intel Mac OS X 10_15_7' : 'X11; Linux x86_64'}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`,
     '--disable-blink-features=AutomationControlled',
     '--autoplay-policy=no-user-gesture-required',
     '--no-first-run',
@@ -165,7 +153,6 @@ if (!port) {
   throw new Error('Chrome ended before its DevTools port opened')
 }
 
-// Some browsers (Brave) open the port before the first page is listed.
 let page: { type: string; webSocketDebuggerUrl: string } | undefined
 
 for (let i = 0; i < 50 && !page; i++) {
@@ -232,6 +219,12 @@ socket.onmessage = async event => {
   console.log('frame')
 }
 
+const { 'User-Agent': userAgent }: { 'User-Agent': string } = await (
+  await fetch(`http://127.0.0.1:${port}/json/version`)
+).json()
+await call('Emulation.setUserAgentOverride', {
+  userAgent: userAgent.replace('HeadlessChrome', 'Chrome'),
+})
 await call('Emulation.setDeviceMetricsOverride', PAGE)
 // Started before the page is: a screencast asked for as the navigation lands
 // is lost with the blank page's renderer and never sends a frame.
