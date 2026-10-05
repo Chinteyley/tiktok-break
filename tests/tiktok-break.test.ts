@@ -5,7 +5,7 @@ const SESSION = { cwd: '/repo', surface: 'terminal', isInteractive: true } as co
 
 // The host beneath the mod: a clock the test moves, and every command it runs
 // recorded instead of done.
-function host(on: On) {
+function host(on: On, browser = '/usr/bin/google-chrome') {
   const clock = mock.clock(on)
   mock.store(on)
   mock.env(on, { HOME: '/Users/u' })
@@ -14,15 +14,17 @@ function host(on: On) {
   const argvs: (readonly string[])[] = []
   on('process.run', ($, e) => {
     const [name = ''] = e.argv
+    // The shell either finds the browser or opens the window.
+    const step = name === 'sh' ? (e.argv[2]?.includes('command -v') ? 'find' : 'open') : name
     const isUp = runs.includes('open')
-    runs.push(name)
+    runs.push(step)
     argvs.push(e.argv)
 
     return {
       value: {
-        // pgrep and pkill find a Chrome only once a window was opened.
+        // pgrep and pkill find a browser only once a window was opened.
         exitCode: (name === 'pgrep' || name === 'pkill') && !isUp ? 1 : 0,
-        stdout: '',
+        stdout: step === 'find' ? `/home/u/.config/tiktok-break\n${browser}\n` : '',
         stderr: '',
         isStdoutTruncated: false,
         isStderrTruncated: false,
@@ -42,7 +44,7 @@ test('the command runs the viewer and draws its frames as a picture', async ($, 
   const spawned: string[] = []
   const blits: number[] = []
   on('process.spawn', async function* ($, e) {
-    spawned.push(`${e.argv[0]} ${e.argv.at(-1)}`)
+    spawned.push(e.argv.slice(-2).join(' '))
     yield { stream: 'stdout', text: 'frame\n' }
 
     return { value: { code: 0, signal: null } }
@@ -69,7 +71,7 @@ test('the command runs the viewer and draws its frames as a picture', async ($, 
   })
   await clock.settle()
   // A terminal wide enough to dock the pane frames videos with their item.
-  expect(spawned).toEqual(['bun item'])
+  expect(spawned).toEqual(['item /usr/bin/google-chrome'])
   expect(blits).toEqual([1])
 
   // Docked, the picture's box is the pane's body less the controls, which
@@ -106,6 +108,23 @@ test('the login command opens a real window on the login page', async ($, on) =>
     presentation: { isFullscreen: true, columns: 200 },
   })
 
-  expect(runs).toEqual(['pkill', 'pgrep', 'open'])
+  expect(runs).toEqual(['find', 'pkill', 'pgrep', 'open'])
+  expect(argvs.at(-1)).toContain('/usr/bin/google-chrome')
   expect(argvs.at(-1)).toContain('--app=https://www.tiktok.com/login')
+  expect(argvs.at(-1)).toContain('--user-data-dir=/home/u/.config/tiktok-break')
+})
+
+test('without a Chromium browser the login command says so and opens nothing', async ($, on) => {
+  const { runs } = host(on, '')
+
+  await $.session.start(SESSION)
+  const result = await $.command.run({
+    command: 'tiktok',
+    args: 'login',
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 200 },
+  })
+
+  expect(runs).toEqual(['find'])
+  expect(result.text).toContain('No Chromium browser')
 })

@@ -12,7 +12,7 @@ Unofficial. Not affiliated with TikTok or Anthropic.
 | Command | What it does |
 | --- | --- |
 | `/tiktok` | Plays your For You feed in a pane; run it again to close. |
-| `/tiktok login` | Opens a real Chrome window on the mod's profile so you can log in. Close it, then run `/tiktok`. |
+| `/tiktok login` | Opens a real browser window on the mod's profile so you can log in. Close it, then run `/tiktok`. |
 
 **The pane** docks at the side, full height, when Claude Code is in its
 fullscreen layout and the terminal is at least 110 columns wide. In a smaller
@@ -38,8 +38,13 @@ actions on the account you logged in with.
 
 ## Requirements
 
-- macOS
-- Google Chrome in `/Applications`
+- macOS or Linux
+- A Chromium browser: Google Chrome, Chromium, Brave or Microsoft Edge, on
+  your `PATH` or in `/Applications`. The first one found is used, in that
+  order. Firefox and Safari can't be driven the way the pane needs, and the
+  login has to happen in the same browser as the pane, so your default browser
+  is not used unless it is one of these. A snap-packaged Chromium can't write
+  the profile in `~/.config` and won't work.
 - [Bun](https://bun.sh) on your `PATH`
 - For the pane, a terminal that draws the kitty graphics protocol. Built and
   tested in Ghostty; kitty should work but is untested.
@@ -67,14 +72,15 @@ claude --plugin-dir ./tiktok-break
 ## How it works
 
 `viewer/viewer.ts` runs a headless Chrome on a profile of its own
-(`~/Library/Application Support/tiktok-break`), opens the For You feed and
+(`~/Library/Application Support/tiktok-break` on macOS,
+`~/.config/tiktok-break` on Linux), opens the For You feed and
 screencasts it over the DevTools protocol. Each frame is written to one PNG
 file, and the mod (`hooks/register.tsx`) repaints the pane's picture from that
 file through the terminal's graphics protocol. The controls go the other way
 over a Unix socket: the viewer presses TikTok's own keyboard shortcuts in the
 page. Sound comes from that Chrome.
 
-`/tiktok login` opens a plain Chrome app window on the same profile, which is
+`/tiktok login` opens a plain app window of the same browser on the same profile, which is
 how the pane comes to be logged in.
 
 ## Good to know

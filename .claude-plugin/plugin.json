@@ -1,6 +1,6 @@
 {
   "name": "tiktok-break",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Plays TikTok in a side pane while Claude works",
   "author": { "name": "chintey" },
   "license": "MIT",
