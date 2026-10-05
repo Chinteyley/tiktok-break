@@ -79,9 +79,11 @@ async function socket($: EngineInterface) {
 // The browser runs on a profile of its own, so the window is a process this
 // mod can end without touching the person's own browser. The shell returns
 // before the browser does, so it waits a second to catch one that dies at
-// startup, and keeps the browser's output in the profile to show then.
+// startup, and keeps the browser's output in the profile to show then. On a
+// first run the profile does not exist yet, so the log needs it made first.
 const LAUNCH = `
 log=$1; shift
+mkdir -p "\${log%/*}" || exit
 "$@" >"$log" 2>&1 &
 sleep 1
 kill -0 $! 2>/dev/null || { wait $!; s=$?; cat "$log" >&2; exit $s; }
