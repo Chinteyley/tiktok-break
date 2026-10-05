@@ -1,12 +1,12 @@
 // Plays the TikTok feed in a headless Chrome and writes what it shows to one
 // PNG file, frame after frame; each line on stdout says a new frame is there.
 // The pane's controls reach it on a Unix socket, one action a request. The mod
-// runs it with bun: viewer.ts <profile dir> <frame path> <socket path> <framing>,
-// the framing `video` (the video alone) or `item` (with its likes and creator).
+// runs it with bun: viewer.ts <profile dir> <frame path> <socket path> <framing>
+// <browser>, the framing `video` (the video alone) or `item` (with its likes and
+// creator), the browser any Chromium one.
 import { lstatSync, rmSync } from 'node:fs'
 import { rename } from 'node:fs/promises'
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const FEED = 'https://www.tiktok.com/foryou'
 // The size the page is laid out at, and how much sharper than that a frame is.
 const PAGE = { width: 500, height: 800, deviceScaleFactor: 1, mobile: false }
@@ -83,10 +83,10 @@ interface Look {
   src?: string
 }
 
-const [profile, frame, socketPath, framing] = process.argv.slice(2)
+const [profile, frame, socketPath, framing, browser] = process.argv.slice(2)
 
-if (!profile || !frame || !socketPath || !framing) {
-  throw new Error('usage: viewer.ts <profile dir> <frame path> <socket path> <video|item>')
+if (!profile || !frame || !socketPath || !framing || !browser) {
+  throw new Error('usage: viewer.ts <profile dir> <frame path> <socket path> <video|item> <browser>')
 }
 
 // The box of one shape around another, on its centre: frames keep one shape
@@ -122,7 +122,7 @@ for (let i = 0; i < 30 && isLocked(); i++) {
 // nothing, and the page takes the like back. The person asked for the pane's
 // Chrome to say what a Chrome window says: its usual name, with no "Headless"
 // in it, and no automation flag.
-const version = new TextDecoder().decode(Bun.spawnSync([CHROME, '--version']).stdout)
+const version = new TextDecoder().decode(Bun.spawnSync([browser, '--version']).stdout)
 const major = /(\d+)\./.exec(version)?.[1]
 
 if (!major) {
@@ -131,11 +131,11 @@ if (!major) {
 
 const chrome = Bun.spawn(
   [
-    CHROME,
+    browser,
     '--headless=new',
     '--remote-debugging-port=0',
     `--user-data-dir=${profile}`,
-    `--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`,
+    `--user-agent=Mozilla/5.0 (${process.platform === 'darwin' ? 'Macintosh; Intel Mac OS X 10_15_7' : 'X11; Linux x86_64'}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`,
     '--disable-blink-features=AutomationControlled',
     '--autoplay-policy=no-user-gesture-required',
     '--no-first-run',
@@ -165,10 +165,19 @@ if (!port) {
   throw new Error('Chrome ended before its DevTools port opened')
 }
 
-const targets: { type: string; webSocketDebuggerUrl: string }[] = await (
-  await fetch(`http://127.0.0.1:${port}/json/list`)
-).json()
-const page = targets.find(target => target.type === 'page')
+// Some browsers (Brave) open the port before the first page is listed.
+let page: { type: string; webSocketDebuggerUrl: string } | undefined
+
+for (let i = 0; i < 50 && !page; i++) {
+  const targets: { type: string; webSocketDebuggerUrl: string }[] = await (
+    await fetch(`http://127.0.0.1:${port}/json/list`)
+  ).json()
+  page = targets.find(target => target.type === 'page')
+
+  if (!page) {
+    await Bun.sleep(100)
+  }
+}
 
 if (!page) {
   throw new Error('Chrome opened no page')

@@ -22,8 +22,58 @@ const CONTROL_GAP = 2
 let viewer: ReturnType<EngineInterface['process']['spawn']> | undefined
 let generation = 0
 
+// Chromium browsers, first found wins: the pane drives one over the DevTools
+// protocol, and the login window must be the same one on the same profile, so
+// another browser's login would never reach the pane.
+const BROWSERS = [
+  'google-chrome',
+  'google-chrome-stable',
+  'chromium',
+  'chromium-browser',
+  'brave-browser',
+  'microsoft-edge',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+]
+// Prints the profile folder, then the browser, or an empty line for none.
+const FIND = `
+case $(uname) in
+  Darwin) echo "$HOME/Library/Application Support/tiktok-break" ;;
+  *) echo "\${XDG_CONFIG_HOME:-$HOME/.config}/tiktok-break" ;;
+esac
+for b in "$@"; do command -v "$b" && exit; done
+echo
+`
+
+let located: Promise<{ profile: string; browser: string }> | undefined
+
+function locate($: EngineInterface) {
+  located ??= $.process.run(['sh', '-c', FIND, 'sh', ...BROWSERS]).then(({ stdout }) => {
+    const [dir = '', binary = ''] = stdout.split('\n')
+
+    return { profile: dir, browser: binary }
+  })
+
+  return located
+}
+
 async function profile($: EngineInterface) {
-  return `${await $.env.get('HOME')}/Library/Application Support/tiktok-break`
+  return (await locate($)).profile
+}
+
+// The browser, or a toast saying what to install and undefined.
+async function findBrowser($: EngineInterface) {
+  const found = (await locate($)).browser
+
+  if (!found) {
+    $.ui.toast('tiktok-break: needs Google Chrome, Chromium, Brave or Microsoft Edge')
+
+    return undefined
+  }
+
+  return found
 }
 
 async function frame($: EngineInterface) {
@@ -34,14 +84,17 @@ async function socket($: EngineInterface) {
   return `${await profile($)}/pane.sock`
 }
 
-// Chrome runs on a profile of its own, so the window is a process this mod
-// can end without touching the person's own browser.
+// The browser runs on a profile of its own, so the window is a process this
+// mod can end without touching the person's own browser. The shell leaves it
+// running in the background, as run waits for what it starts to exit.
 async function open($: EngineInterface, url: string) {
+  const binary = (await locate($)).browser
   const { exitCode } = await $.process.run([
-    'open',
-    '-na',
-    'Google Chrome',
-    '--args',
+    'sh',
+    '-c',
+    '"$@" >/dev/null 2>&1 &',
+    'sh',
+    binary,
     `--app=${url}`,
     `--user-data-dir=${await profile($)}`,
     '--window-size=430,900',
@@ -50,16 +103,16 @@ async function open($: EngineInterface, url: string) {
   ])
 
   if (exitCode !== 0) {
-    $.ui.toast('tiktok-break: could not open Google Chrome')
+    $.ui.toast(`tiktok-break: could not open ${binary}`)
   }
 }
 
-// Whether any Chrome runs on the mod's profile: a window, or the pane's.
+// Whether any browser runs on the mod's profile: a window, or the pane's.
 async function isBusy($: EngineInterface) {
   const { exitCode } = await $.process.run([
     'pgrep',
     '-f',
-    `Google Chrome .*--user-data-dir=${await profile($)}`,
+    `--user-data-dir=${await profile($)}`,
   ])
 
   return exitCode === 0
@@ -70,7 +123,7 @@ async function quit($: EngineInterface) {
   const { exitCode } = await $.process.run([
     'pkill',
     '-f',
-    `Google Chrome --app=[^ ]* --user-data-dir=${await profile($)}`,
+    `--app=[^ ]* --user-data-dir=${await profile($)}`,
   ])
 
   return exitCode === 0
@@ -88,7 +141,7 @@ async function settle($: EngineInterface) {
 // the loop is the viewer's life, so ending the stream ends the playback.
 // Docked there is room to frame a video with its likes and creator; the
 // small block above the prompt frames the video alone.
-async function watch($: EngineInterface, isDocked: boolean) {
+async function watch($: EngineInterface, binary: string, isDocked: boolean) {
   const file = await frame($)
   const frames = $.process.spawn({
     argv: [
@@ -98,6 +151,7 @@ async function watch($: EngineInterface, isDocked: boolean) {
       file,
       await socket($),
       isDocked ? 'item' : 'video',
+      binary,
     ],
   })
   viewer = frames
@@ -188,6 +242,10 @@ export const register: Register = on => {
         await $.ui.close({ id: PANE })
       }
 
+      if (!(await findBrowser($))) {
+        return { text: 'No Chromium browser found to log in with.' }
+      }
+
       await quit($)
       await settle($)
       await open($, LOGIN)
@@ -203,12 +261,18 @@ export const register: Register = on => {
       return { text: 'TikTok pane closed.' }
     }
 
+    const binary = await findBrowser($)
+
+    if (!binary) {
+      return { text: 'No Chromium browser found to play TikTok in.' }
+    }
+
     const { isFullscreen, columns } = e.presentation
     const isDocked = isFullscreen && columns >= DOCK_COLUMNS
 
     await quit($)
     await settle($)
-    void watch($, isDocked)
+    void watch($, binary, isDocked)
     await $.ui.open({ id: PANE, title: 'TikTok', columns: 46, rows: 60 })
 
     const where = isDocked
