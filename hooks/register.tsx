@@ -22,35 +22,28 @@ const CONTROL_GAP = 2
 let viewer: ReturnType<EngineInterface['process']['spawn']> | undefined
 let generation = 0
 
-// Chromium browsers, first found wins: the pane drives one over the DevTools
-// protocol, and the login window must be the same one on the same profile, so
-// another browser's login would never reach the pane.
-const BROWSERS = [
-  'google-chrome',
-  'google-chrome-stable',
-  'chromium',
-  'chromium-browser',
-  'brave-browser',
-  'microsoft-edge',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
-  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-]
-// Prints the profile folder, then the browser, or an empty line for none.
 const FIND = `
 case $(uname) in
-  Darwin) echo "$HOME/Library/Application Support/tiktok-break" ;;
-  *) echo "\${XDG_CONFIG_HOME:-$HOME/.config}/tiktok-break" ;;
+  Darwin)
+    echo "$HOME/Library/Application Support/tiktok-break"
+    app=$(osascript -l JavaScript -e 'ObjC.import("AppKit"); const u = $.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL($.NSURL.URLWithString("https://www.tiktok.com")); u.isNil() ? "" : u.path.js' 2>/dev/null)
+    ls "$app/Contents/Frameworks" 2>/dev/null | grep -q ' Framework\\.framework$' &&
+      b="$app/Contents/MacOS/$(defaults read "$app/Contents/Info" CFBundleExecutable)" ;;
+  *)
+    echo "\${XDG_CONFIG_HOME:-$HOME/.config}/tiktok-break"
+    id=$(xdg-settings get default-web-browser 2>/dev/null)
+    for d in "\${XDG_DATA_HOME:-$HOME/.local/share}" $(echo "\${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" | tr : ' '); do
+      [ -n "$id" ] && [ -f "$d/applications/$id" ] && b=$(sed -n 's/^Exec=\\([^ ]*\\).*/\\1/p' "$d/applications/$id" | head -n 1) && break
+    done
+    "$b" --version 2>/dev/null | grep -Eq '[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' || b= ;;
 esac
-for b in "$@"; do command -v "$b" && exit; done
-echo
+command -v "$b" || echo
 `
 
 let located: Promise<{ profile: string; browser: string }> | undefined
 
 function locate($: EngineInterface) {
-  located ??= $.process.run(['sh', '-c', FIND, 'sh', ...BROWSERS]).then(({ stdout }) => {
+  located ??= $.process.run(['sh', '-c', FIND]).then(({ stdout }) => {
     const [dir = '', binary = ''] = stdout.split('\n')
 
     return { profile: dir, browser: binary }
@@ -63,12 +56,11 @@ async function profile($: EngineInterface) {
   return (await locate($)).profile
 }
 
-// The browser, or a toast saying what to install and undefined.
 async function findBrowser($: EngineInterface) {
   const found = (await locate($)).browser
 
   if (!found) {
-    $.ui.toast('tiktok-break: needs Google Chrome, Chromium, Brave or Microsoft Edge')
+    $.ui.toast('tiktok-break: set a Chromium-based browser (Chrome, Chromium, Brave, Edge, Helium, Vivaldi…) as your default; Firefox and Safari cannot drive the pane')
 
     return undefined
   }
@@ -85,26 +77,39 @@ async function socket($: EngineInterface) {
 }
 
 // The browser runs on a profile of its own, so the window is a process this
-// mod can end without touching the person's own browser. The shell leaves it
-// running in the background, as run waits for what it starts to exit.
+// mod can end without touching the person's own browser. The shell returns
+// before the browser does, so it waits a second to catch one that dies at
+// startup, and keeps the browser's output in the profile to show then.
+const LAUNCH = `
+log=$1; shift
+"$@" >"$log" 2>&1 &
+sleep 1
+kill -0 $! 2>/dev/null || { wait $!; s=$?; cat "$log" >&2; exit $s; }
+`
+
+// Resolves whether the window came up.
 async function open($: EngineInterface, url: string) {
   const binary = (await locate($)).browser
-  const { exitCode } = await $.process.run([
+  const dir = await profile($)
+  const { exitCode, stderr } = await $.process.run([
     'sh',
     '-c',
-    '"$@" >/dev/null 2>&1 &',
+    LAUNCH,
     'sh',
+    `${dir}/launch.log`,
     binary,
     `--app=${url}`,
-    `--user-data-dir=${await profile($)}`,
+    `--user-data-dir=${dir}`,
     '--window-size=430,900',
     '--no-first-run',
     '--no-default-browser-check',
   ])
 
   if (exitCode !== 0) {
-    $.ui.toast(`tiktok-break: could not open ${binary}`)
+    $.ui.toast(`tiktok-break: could not open ${binary}: ${stderr.trim().split('\n').at(-1) ?? ''}`)
   }
+
+  return exitCode === 0
 }
 
 // Whether any browser runs on the mod's profile: a window, or the pane's.
@@ -112,6 +117,7 @@ async function isBusy($: EngineInterface) {
   const { exitCode } = await $.process.run([
     'pgrep',
     '-f',
+    '--',
     `--user-data-dir=${await profile($)}`,
   ])
 
@@ -123,6 +129,7 @@ async function quit($: EngineInterface) {
   const { exitCode } = await $.process.run([
     'pkill',
     '-f',
+    '--',
     `--app=[^ ]* --user-data-dir=${await profile($)}`,
   ])
 
@@ -243,12 +250,14 @@ export const register: Register = on => {
       }
 
       if (!(await findBrowser($))) {
-        return { text: 'No Chromium browser found to log in with.' }
+        return { text: 'No Chromium browser is your default browser to log in with.' }
       }
 
       await quit($)
       await settle($)
-      await open($, LOGIN)
+      if (!(await open($, LOGIN))) {
+        return { text: 'The login window did not open.' }
+      }
 
       return {
         text: 'Log in to TikTok in the window that opened, then close it and run /tiktok.',
@@ -264,7 +273,7 @@ export const register: Register = on => {
     const binary = await findBrowser($)
 
     if (!binary) {
-      return { text: 'No Chromium browser found to play TikTok in.' }
+      return { text: 'No Chromium browser is your default browser to play TikTok in.' }
     }
 
     const { isFullscreen, columns } = e.presentation

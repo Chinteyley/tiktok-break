@@ -14,7 +14,6 @@ function host(on: On, browser = '/usr/bin/google-chrome') {
   const argvs: (readonly string[])[] = []
   on('process.run', ($, e) => {
     const [name = ''] = e.argv
-    // The shell either finds the browser or opens the window.
     const step = name === 'sh' ? (e.argv[2]?.includes('command -v') ? 'find' : 'open') : name
     const isUp = runs.includes('open')
     runs.push(step)
