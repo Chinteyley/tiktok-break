@@ -127,3 +127,22 @@ test('without a Chromium browser the login command says so and opens nothing', a
   expect(runs).toEqual(['find'])
   expect(result.text).toContain('No Chromium browser')
 })
+
+// Tests here run no processes, so this reads the launch script itself: on a
+// first run the profile is missing, and the shell cannot open its log there.
+test('the login launch makes the profile before logging into it', async ($, on) => {
+  const { argvs } = host(on)
+
+  await $.session.start(SESSION)
+  await $.command.run({
+    command: 'tiktok',
+    args: 'login',
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 200 },
+  })
+
+  const script = argvs.at(-1)?.[2] ?? ''
+  expect(argvs.at(-1)?.[4]).toBe('/home/u/.config/tiktok-break/launch.log')
+  expect(script.indexOf('mkdir -p "${log%/*}"')).toBeGreaterThan(-1)
+  expect(script.indexOf('mkdir -p')).toBeLessThan(script.indexOf('>"$log"'))
+})
